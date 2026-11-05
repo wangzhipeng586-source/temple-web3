@@ -1,0 +1,218 @@
+// 云寺院 MVP：单寺院、殿堂、账号、申请单 / 订单 / 履约、灯位与牌位库存。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  DEVOTEE
+  ADMIN
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  APPLE
+}
+
+enum ServiceType {
+  PRAYER
+  LAMP
+  AUSPICIOUS_TABLET
+  MEMORIAL_TABLET
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  CANCELLED
+}
+
+enum FulfillmentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum SlotStatus {
+  AVAILABLE
+  HELD
+  OCCUPIED
+}
+
+enum PaymentProviderName {
+  MOCK
+  STRIPE
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String?
+  passwordHash String?
+  role         Role         @default(DEVOTEE)
+  provider     AuthProvider @default(EMAIL)
+  providerSub  String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  sessions     Session[]
+  applications Application[]
+
+  @@unique([provider, providerSub])
+  @@index([role])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Temple {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  summary     String
+  description String
+  address     String?
+  halls       Hall[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Hall {
+  id           String         @id @default(cuid())
+  templeId     String
+  temple       Temple         @relation(fields: [templeId], references: [id], onDelete: Cascade)
+  name         String
+  slug         String
+  summary      String
+  description  String
+  sortOrder    Int            @default(0)
+  enabled      Boolean        @default(true)
+  services     HallService[]
+  slots        OfferingSlot[]
+  applications Application[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([templeId, slug])
+  @@index([enabled, sortOrder])
+}
+
+model HallService {
+  id           String        @id @default(cuid())
+  hallId       String
+  hall         Hall          @relation(fields: [hallId], references: [id], onDelete: Cascade)
+  type         ServiceType
+  title        String
+  description  String
+  priceCents   Int
+  currency     String        @default("CNY")
+  termDays     Int?
+  enabled      Boolean       @default(true)
+  sortOrder    Int           @default(0)
+  applications Application[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([hallId, type])
+}
+
+model OfferingSlot {
+  id           String         @id @default(cuid())
+  hallId       String
+  hall         Hall           @relation(fields: [hallId], references: [id], onDelete: Cascade)
+  type         ServiceType
+  locationCode String
+  termDays     Int
+  status       SlotStatus     @default(AVAILABLE)
+  applications Application[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([hallId, type, locationCode])
+  @@index([hallId, type, status])
+}
+
+model Application {
+  id            String             @id @default(cuid())
+  number        String             @unique
+  type          ServiceType
+  status        ApplicationStatus  @default(SUBMITTED)
+  userId        String
+  user          User               @relation(fields: [userId], references: [id])
+  hallId        String
+  hall          Hall               @relation(fields: [hallId], references: [id])
+  hallServiceId String
+  hallService   HallService        @relation(fields: [hallServiceId], references: [id])
+  slotId        String?
+  slot          OfferingSlot?      @relation(fields: [slotId], references: [id])
+  applicantName String
+  contact       String
+  beneficiary   String
+  intention     String
+  note          String?
+  serviceTitle  String
+  priceCents    Int
+  currency      String
+  hallName      String
+  reviewNote    String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  order         Order?
+  events        ApplicationEvent[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([hallId])
+}
+
+model Order {
+  id            String              @id @default(cuid())
+  number        String              @unique
+  applicationId String              @unique
+  application   Application         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  status        OrderStatus         @default(PENDING_PAYMENT)
+  fulfillment   FulfillmentStatus   @default(PENDING)
+  amountCents   Int
+  currency      String
+  priceSnapshot Json
+  provider      PaymentProviderName @default(MOCK)
+  paymentRef    String?
+  paidAt        DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model ApplicationEvent {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  action        String
+  note          String?
+  actorId       String?
+  createdAt     DateTime    @default(now())
+
+  @@index([applicationId, createdAt])
+}
